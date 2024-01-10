@@ -19,8 +19,7 @@ The file 'Top_100_Artists.csv' contains:
 This file has been used in the code, and the code was used to generate it is included in the R Markdown file (commented out). I interact with the artists data mainly using this file, and expand on it further in the Markdown.
 
 **Analysis:**
-Using Spotify API, the genres of the artists was assessed, both who were top rankers in the Rolling Stones list, as well as the Spotify ranks (included in csv). The audio features of the top tracks of these artists were analysed, and a comparitive study was done of one artist to another. 
-One of the visualisations could be seen as follows: 
+Using Spotify API, the genres of the artists was assessed, both who were top rankers in the Rolling Stones list, as well as the Spotify ranks (included in csv). The audio features of the top tracks of these artists were analysed, and a comparitive study was done of one artist to another. One of the visualisations could be seen as follows: 
 
 
 ![image](https://github.com/RiyaChhikara/LSE-MSc-Projects/assets/115228191/4fb21ddd-dbd7-41b0-8d21-ad55877ba154)
