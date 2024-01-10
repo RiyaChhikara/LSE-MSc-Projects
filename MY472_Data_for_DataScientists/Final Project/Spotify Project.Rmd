@@ -1,0 +1,609 @@
+---
+title: "Rock music analysed using Spotify Web API"
+subtitle: "MY472 Data for Data Scientsts"
+author: "Riya Chhikara"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: united
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r LIBRARIES, message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(htmlwidgets)
+library(htmltools)
+library(rvest)
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(RSelenium)
+library(netstat)
+library(httr)
+library(jsonlite)
+library(lubridate)
+library(knitr)
+library(ggplot2)
+library(scales)
+library(sf)
+library("clipr")
+library(spotifyr)
+library(scales)
+library(ggplot2)
+library(dplyr)
+library(plotly)
+library(reshape2)
+library(dendextend)
+library(fmsb)
+
+```
+
+# 1. Introduction 
+
+**Research question**: 
+“Rolling Stone Magazine ranked their 100 greatest musical artists of all time. At the end of 2023, how has their music endured? Are there any features or characteristics that seem to explain enduring engagement?"
+
+**The Github Repository with the project: [Link](https://github.com/RiyaChhikara/LSE-MSc-Projects/tree/main/MY472_Data_for_DataScientists/Final%20Project)**
+
+The ranking by Rolling Stones celebrated the rock and roll heroes of Sixties, and also the modern insurgents like Eminem. Their music style is analysed using R. In themodern times, how has rock art survved, and the musicians among the list of 100 who still hold ground. I analysed Spotify's data for these musicians using its API, and comment on the current taste, that has a modern flavour to it. Bur necverthelessm, the rock art is still rocking the music charts. 
+
+
+\newpage
+
+# 2. Data
+
+Why I am choosing to study tracks, and not albums. Because a song may appear more than once in an album like reprised/ remix or live version.  And won’t tell much about popularity, because there are few hits that make an album hit. Hence, I focus on those hits. 
+
+```{r echo=FALSE}
+DiagrammeR::grViz("digraph {
+  graph [layout = dot, rankdir = TB]
+  
+  node [shape = rectangle]        
+  rec1 [label = 'Step 1. Scrape Titles from Rolling Stone Webpage ']
+  rec2 [label = 'Step 2. Get Artists ID from Spotify Website']
+  rec3 [label =  'Step 3. Interact with Spotify Web API']
+  rec4 [label = 'Step 4. Compare and Visualize Artists']
+  
+  # edge definitions with the node IDs
+  rec1 -> rec2 -> rec3 -> rec4
+  }",
+  height = 300)
+```
+
+
+```{r RollingStone, message=FALSE, warning=FALSE, include=FALSE}
+# 2. SCRAPING ROLLING STONE WEBSITE 
+
+## 2.1  Helper function
+scrape_titles <- function(url, num_titles = 50){
+
+  read_html(url)%>%
+    html_nodes('h2')%>%
+    html_text()%>%
+    head(num_titles) %>%
+    tibble(Titles=.)
+}
+#' Scrape Titles from HTML Page
+#' @param url The URL of the HTML page to scrape titles from.
+#' @param num_titles The number of titles to retrieve (default is 50).
+#' @return A tibble containing the scraped titles.
+
+## 2.2 Calling Function: Combines the results  
+rolling_stone_ranking <- function(){
+  # URLs
+  url1 <- "https://www.rollingstone.com/music/music-lists/100-greatest-artists-147446/"
+  url2 <- paste0(url1,'the-band-2-88489/')
+  
+  # Scrape titles from both URLs and combine into a single tibble
+  all_titles <- bind_rows(
+    scrape_titles(url1),
+    scrape_titles(url2)
+  ) 
+  
+  return(all_titles)
+}
+#' Rolling Stone Artists Ranking
+#' @return Combined tibble of titles from two Rolling Stone URLs.
+#' @details Scrapes titles from two Rolling Stone URLs and combines into a single tibble.
+
+## 2.3 Output: Tibble arranged in descending Order 
+all_artists <- rolling_stone_ranking()%>%
+   dplyr::arrange(-dplyr::row_number())
+
+```
+
+```{r Spotify Verification, message=FALSE, warning=FALSE, include=FALSE}
+# 3. WORKING WITH SPOTIFY API 
+
+## 3.1 API Verification 
+Sys.setenv(SPOTIFY_CLIENT_ID = '9b8cb20c9e2b4e14988a5440b6cd5a88')
+Sys.setenv(SPOTIFY_CLIENT_SECRET = 'd7bd1830d471496497bcf5c9f8cfa583')
+
+### Acess Token 
+get_access_token <- function(clientID, secret) {
+  verification_url <- 'https://accounts.spotify.com/api/token'
+  auth_string <- paste0(clientID, ":", secret)
+  
+  response <- httr::POST(
+    verification_url,
+    httr::accept_json(),
+    httr::authenticate(clientID, secret),
+    body = list(grant_type = 'client_credentials'),
+    encode = 'form',
+    httr::verbose()
+  )
+  
+  return(httr::content(response)$access_token)
+}
+### Authorization Header
+get_header<- function(token){
+    HeaderValue <- paste0('Bearer ', token)
+    return(HeaderValue)
+}
+#' Generate Spotify API Request Header
+#' @param token Access token obtained from Spotify.
+#' @return Authorization header for Spotify API requests.
+
+access_token <- get_access_token(Sys.getenv("SPOTIFY_CLIENT_ID"),
+                                 Sys.getenv("SPOTIFY_CLIENT_SECRET"))
+HeaderValue <-get_header(access_token)
+```
+
+```{r Spotify Scraping, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+## 3.2 Scraping Artist ID 
+# (I used this because I found the search request on API later.)
+scrapeArtistsID <- function(all_artists) {
+  rD <- rsDriver(browser = c("firefox"), verbose = FALSE, port = netstat::free_port(random = TRUE), chromever = NULL)
+  driver <- rD[["client"]]
+
+   # Define XPaths for various elements
+  accept_cookies <- '//*[@id="onetrust-accept-btn-handler"]'
+  search_left_col <- "/html/body/div[4]/div/div[2]/div[1]/nav/div[1]/ul/li[2]"
+  search_bar <- "/html/body/div[4]/div/div[2]/div[3]/header/div[3]/div/div/form/input"
+  #input the name of the band 
+  choose_artist_option <- '/html/body/div[4]/div/div[2]/div[3]/div[1]/div[2]/div[2]/div/div/div[2]/main/div[1]/div/div/div/div/div/a[4]/button/span'
+  
+    choose_artist_option_2 <- '//*[@id="main"]/div/div[2]/div[3]/div[1]/div[2]/div[2]/div/div/div[2]/main/div[1]/div/div/div/div/div/a[2]/button/span'
+  
+  top_result_card <- "/html/body/div[4]/div/div[2]/div[3]/div[1]/div[2]/div[2]/div/div/div[2]/main/div[2]/div/div/div/div[1]/div[1]"
+  hamburger_menu <- "/html/body/div[4]/div/div[2]/div[3]/div[1]/div[2]/div[2]/div/div/div[2]/main/section/div/div[2]/div[2]/div[4]/div/div/div/div/button[2]"
+  click_share_button <- "/html/body/div[24]/div/ul/li[4]"
+  copy_link_to_artist <- "/html/body/div[24]/div/ul/li[4]/div/ul/li[1]/button"
+
+   # Vector to store Spotify IDs
+  spotify_ids <- vector("list", length = length(all_artists))
+  
+  url <- "https://open.spotify.com/search"
+  
+  # Navigate to Spotify search page
+  driver$navigate(url)
+  Sys.sleep(1)
+  
+  # Accept cookies
+  opener <- driver$findElement(using ="xpath", value = accept_cookies)
+  opener$clickElement()
+  Sys.sleep(1)
+    for (i in seq_along(all_artists$Titles)) {
+  
+    search_left <- driver$findElement(using="xpath", value = search_left_col)
+    search_left$clickElement()
+    
+    #Input Artist Name
+    search_artist <- driver$findElement(using = "xpath", value = search_bar)
+    search_artist$sendKeysToElement(list(all_artists$Titles[i]))
+    Sys.sleep(2)
+        
+button_xpath <- "/html/body/div[4]/div/div[2]/div[3]/div[1]/div[2]/div[2]/div/div/div[2]/main/div[1]/div/div/div/div/div/a[4]/button/span"
+button_element <- driver$findElement(using = "xpath", value = button_xpath)
+    button_element$clickElement()
+    
+    # Selecting
+    top_result <- driver$findElement(using="xpath", value = top_result_card)
+    top_result$clickElement()
+    Sys.sleep(1)
+    
+    Sys.sleep(1)
+    # hamburger_Menu 
+    hamburger <- driver$findElement(using="xpath", value = hamburger_menu)
+    hamburger$clickElement()
+    Sys.sleep(1)
+    
+    # Right click on card 
+    click_share <- driver$findElement(using="xpath", value = click_share_button)
+    click_share$clickElement()
+    Sys.sleep(1)
+    
+    # click copy_link_to_artist 
+    copy_link <- driver$findElement(using="xpath", value = copy_link_to_artist)
+    copy_link$clickElement()
+    
+    # Read the Spotify ID from clipboard
+    spotify_ids[[i]] <- read_clip()
+    }
+  
+    # Close the browser
+    driver$close()
+    
+      # Create a dataframe with artist names and Spotify IDs
+    result_df <- data.frame(Artist = artists, 
+                            SpotifyID = unlist(spotify_ids), 
+                            stringsAsFactors = FALSE)
+    return(result_df)
+}
+
+#scrapeArtistsID(all_artists)
+
+# result_dataframe <- scrapeArtistsID(all_artists)
+# Save the dataframe to a CSV file
+# write.csv(result_dataframe, "Top_100_Artists.csv", row.names = FALSE)
+```
+
+\newpage 
+# 3. Analysis
+
+```{r spotify API, echo=FALSE, message=FALSE, warning=FALSE}
+fetch_artists_details = function(){
+  all_100_artists <- read.csv('Top_100_Artists.csv')
+  get_artist_ENDPOINT <- "https://api.spotify.com/v1/artists/"
+
+  access_token <- get_access_token(Sys.getenv("SPOTIFY_CLIENT_ID"),
+                                 Sys.getenv("SPOTIFY_CLIENT_SECRET"))
+  HeaderValue <-get_header(access_token)
+
+  # Initialize vectors to store data
+  Followers <- numeric(length(all_100_artists$SpotifyID))
+  Popularity <- numeric(length(all_100_artists$SpotifyID))
+  
+  for (i in seq_along(all_100_artists$SpotifyID)) {
+    artist_ID <- all_100_artists$SpotifyID[i]
+    URI <- paste0(get_artist_ENDPOINT, artist_ID)
+    response2 <- GET(url = URI, add_headers(Authorization = HeaderValue))
+    Artist <- content(response2)
+  
+    # Store data in vectors
+    Followers[i] <- Artist$followers$total
+    Popularity[i] <- Artist$popularity
+    
+  updated_artists_data <- cbind(all_100_artists, Followers, Popularity)
+  return (updated_artists_data)
+  }
+}
+
+# Writing the data
+# all_100_artists <- fetch_artists_details()
+# write.csv(all_100_artists, "Top_100_Artists.csv", row.names = FALSE)
+all_100_artists <- read.csv("Top_100_Artists.csv")
+
+# Select the top 10 artists based on Followers
+top_followers <- all_100_artists %>%
+  arrange(desc(Followers)) %>%
+  select(Artist, Followers) %>%
+  head(10)
+
+# Select the top 10 artists based on Popularity
+top_popularity <- all_100_artists %>%
+  arrange(desc(Popularity)) %>%
+  select(Artist, Popularity) %>%
+  head(10)
+
+# Function to create a Plotly interactive chart
+create_interactive_chart <- function(data, y_column, title) {
+  tooltip_text <- paste(format(data[y_column], big.mark = ",", scientific = FALSE))
+  p <- ggplot(data, aes_string(x = "Artist",  y = y_column, label = "Artist", text = tooltip_text)) +
+    geom_point(aes_string(size = y_column), color = "blue", alpha = 0.5) +
+    geom_text(aes(label = Artist), vjust = 1, hjust = 1.5) +
+    labs(title = title, y = y_column, x = "Artist") +
+    theme_minimal()+
+    theme(axis.text.x = element_blank())+ 
+    scale_y_continuous(labels = label_comma())  # Format y-axis labels
+
+  # Convert to Plotly with custom tooltip
+  ggplotly(p, tooltip = "text")
+}
+
+# Creates interactive chart for followers
+plot_followers <- create_interactive_chart(top_followers, "Followers", "Fig 1: Top Artists by Followers")
+
+# Creates interactive chart for popularity
+plot_popularity <- create_interactive_chart(top_popularity, "Popularity", "Fig 2:Top Artists by Popularity")
+```
+
+
+## 3.1 Rolling Stones Ranking Revisited with Spotify
+```{r Followers, echo=FALSE, message=FALSE, warning=FALSE}
+plot_followers
+```
+In Figure 1, we look at those 10 artists from the Rolling Stones list who had the highest number of follower count in Spotify ranking. Eminem is at the top with 80 million followers, and Queen is next with 49 million. Later in this notebook, we'll explore why Eminem's music is so popular.
+
+There's also a second group of famous artists: Guns n' Roses, AC/DC, Michael Jackson, Metallica, and The Beatles. Each of them has a lot of followers too. Pink Floyd, Nirvana, and Tupac Shakur are in another group, each with around 18 million followers.
+
+It's interesting to note that Eminem was only 83rd on Rolling Stone's list, but he's got more Spotify followers than anyone else on the list. Only The Beatles, Michael Jackson, and Nirvana were in the top 50 of Rolling Stone's ranking, showing the differences over a periods of time from 2011 to 2023.
+
+
+```{r popularity, echo=FALSE, message=FALSE, warning=FALSE}
+plot_popularity
+```
+
+In Figure 2, we look at those 10 artists from the Rolling Stones list who had the highest popularity on Spotify.Popularity is ranked by Spotify on a scale of 0 to 100. Yet again, Eminem rules the chart with a whopping popularity of 90. This is followed by Queen (similar to the followers ranking). At the next level, we have The Beatles and Elton John sharing the place with 83 as their score. There are some names which were not seen in Figure 1 like Jay-Z, Elvis Presley, Elton John and Radiohead. 
+
+## 3.2 Rolling Stones Genres Revisited with Spotify
+```{r Genre of Rolling Stones, message=FALSE, warning=FALSE, include=FALSE}
+# Extracting Genres list
+
+# Function to retrieve genres and convert them into a single string
+get_genres_as_string <- function(spotify_id) {
+  artist_info <- get_artist(spotify_id)
+  if (length(artist_info$genres) > 0) {
+    return(paste(artist_info$genres, collapse = ", "))
+  } else {
+    return(NA)  # Return NA if there are no genres
+  }
+}
+
+# Apply the function to each row in the data frame and create a new column for genres
+all_100_artists$Genres <- sapply(all_100_artists$SpotifyID, 
+                                 get_genres_as_string)
+
+# Assuming 'data' is your data frame and 'Genres' is the column with genres
+# Splitting the genres and creating a frequency table
+genre_list <- strsplit(all_100_artists$Genres, ", ")
+genre_table <- table(unlist(genre_list))
+
+# Creating a data frame for the top 10 genres
+top_genres <- head(sort(genre_table, decreasing = TRUE), 10)
+top_genres_df <- data.frame(Genre = names(top_genres), Frequency = as.numeric(top_genres))
+
+# Bar Chart for Top 10 Music Genres acc. to Rolling Stones 
+bar_chart_object <- ggplot(top_genres_df, aes(x = reorder(Genre, Frequency), y = Frequency)) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    coord_flip() +  # Flips the coordinates to make horizontal bars
+    theme_minimal() +
+    labs(title = "Fig 3: Top 10 Music Genres (Rolling Stones)", x = "Genre", y = "Frequency")
+
+# Convert to a plotly object for interactive features
+genres_bar_chart <- ggplotly(bar_chart_object)
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Display the plotly object
+genres_bar_chart
+```
+In Figure 3, we look at the most occuring genres amongst all the artists in Rolling Stones list. Rock, undoubtedly comes at the first. There are other forms of Rock that appear like hard rock, album rock, classic rock, folk rok etc. 
+
+
+```{r barcharts 2023, message=FALSE, warning=FALSE, include=FALSE}
+create_top_genres_visualization <- function(all_100_artists, top_followers, top_popularity) {
+  # Function to fetch genres for a given artist
+  get_genres_for_artist <- function(artist_name, all_artists_df) {
+    genres <- all_artists_df$Genres[all_artists_df$Artist == artist_name]
+    if (length(genres) > 0) {
+      return(paste(unique(genres), collapse = ", "))
+    } else {
+      return(NA)
+    }
+  }
+
+  # Top artists by Followers and Popularity
+  top_artists_2023 <- unique(c(top_followers$Artist, top_popularity$Artist))
+
+  # Create a new dataframe for top artists and their genres
+  top_artists_genres_df <- data.frame(Artist = top_artists_2023, 
+                                      Genres = sapply(top_artists_2023, get_genres_for_artist, all_artists_df = all_100_artists),
+                                      stringsAsFactors = FALSE)
+
+  # Unlist and trim genres to ensure clean data
+  trimmed_genres <- trimws(unlist(strsplit(top_artists_genres_df$Genres, ",\\s*")))
+
+  # Count frequencies of genres
+  genre_frequency <- table(trimmed_genres)
+
+  # Sort and select top 10 genres
+  top_genres <- sort(genre_frequency, decreasing = TRUE)[1:10]
+
+  # Convert to dataframe
+  top_genres_df <- data.frame(Genre = names(top_genres), Frequency = as.numeric(top_genres))
+
+  # Bar Chart for Top 10 Genres among Top Artists
+  ggplot_object <- ggplot(top_genres_df, aes(x = reorder(Genre, Frequency), y = Frequency, text = paste("Genre:", Genre, "<br>Frequency:", Frequency))) +
+    geom_bar(stat = "identity", fill = "steelblue") +
+    coord_flip() +  # Flips the coordinates to make horizontal bars
+    theme_minimal() +
+    labs(title = "Fig 4: Top 10 Music Genres (2023 Spotify)", x = "Genre", y = "Frequency")
+
+  # Convert to a plotly object with customized tooltip
+  plotly_object <- ggplotly(ggplot_object, tooltip = "text")
+
+  # Return the plotly object
+  return(plotly_object)
+}
+
+# Usage of the function
+Spotify_genres_chart <- create_top_genres_visualization(all_100_artists, top_followers, top_popularity)
+```
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+Spotify_genres_chart
+```
+In Figure 4, we look at those genres that appeared in the list of artists with highest followers and popularity on Spotify. We find new genres like rap, glam rock, gangster rap, and hip hop. Rock and classic rock, remained evergreen in 2023 as well. 
+
+## 3.3 Similarities amongst Spotify's Top Rankers
+
+```{r heatmap 2023 popularity+Followers, echo=FALSE, message=FALSE, warning=FALSE}
+# Create a long format data frame suitable for a heatmap 
+
+long_data <- top_artists_genres_df %>%
+  mutate(Genre = strsplit(Genres, ",\\s*")) %>%
+  unnest(Genre) %>%
+  count(Artist, Genre)
+
+# Create a wide format data suitable for the heatmap
+wide_data <- dcast(long_data, Artist ~ Genre, value.var = "n", fill = 0)
+# Melt the data for ggplot
+melted_data <- melt(wide_data, id.vars = 'Artist')
+
+# Heatmap plot
+ggplot_object <- ggplot(melted_data, aes(x = Artist, y = variable)) +
+  geom_tile(aes(fill = value), color = "white") +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7), # Rotate and adjust x-axis labels
+        axis.title.x = element_blank(), 
+        axis.title.y = element_blank(),
+        legend.position = "none")
+  labs(title = "Artist-Genre Association Heatmap")
+
+# Convert to a plotly object for interactivity
+plotly_object <- ggplotly(ggplot_object)
+
+# Display the plotly object
+plotly_object
+
+```
+## 3.4 Billboard Rankings 2023 
+```{r scrape_billboard artists 2023, message=FALSE, warning=FALSE, include=FALSE}
+URL <- "https://www.billboard.com/charts/year-end/2023/top-rock-artists/"
+billboard_artists <- read_html(URL) %>%
+  html_nodes('#title-of-a-story') %>%
+  html_text() %>%
+  head(25) %>%
+  str_trim() %>% # Remove leading and trailing whitespace
+  gsub("[\r\n\t]", "", .) %>% # Remove all occurrences of \r, \n, and \t
+  tibble(Artists = .)
+
+# Finding matching artists
+matching_artists <- all_100_artists[all_100_artists$Artist %in% billboard_artists$Artists, ]
+```
+
+```{r Billboard, echo=FALSE, message=FALSE, warning=FALSE}
+print(matching_artists$Artist)
+```
+These are the rock artists that appeared on 2023 Year-End Charts, showing that their music is still liked by people even in 2023. 
+[Link](https://www.billboard.com/charts/year-end/2023/top-rock-artists/)
+
+## 3.5 Tune into the Top 4 Pioneers 🎵
+
+![ElvisPresley](Elvis Presley.png)
+The Google Trend shows the spike in interest for Elvis Presley. Thhis was due to a new movie documentary made on him, which thereby increased public interest for the artist. Episodes like these have always generated motr interest in their music. 
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+get_top_albums <- function(artist_name) {
+  # Get artist audio features
+  artist_data <- spotifyr::get_artist_audio_features(artist_name)
+  
+  # Select numeric columns and album_name
+  artist_data <- artist_data %>%
+    select_if(is.numeric) %>%
+    bind_cols(artist_data %>% select(album_name))
+  
+  # Clean album names
+  artist_data <- artist_data %>%
+    mutate(album_name = gsub(" *\\(.*?\\) *| *\\[.*?\\] *", "", album_name))
+  
+  # Group by album_name and calculate the mean for numeric columns
+  artist_data <- artist_data %>%
+    group_by(album_name) %>%
+    summarise_if(is.numeric, mean, na.rm = TRUE) %>%
+    ungroup() %>%
+    column_to_rownames("album_name") %>%
+    as.data.frame()
+  
+  # Create dendrogram
+  top_dend <- as.dendrogram(hclust(dist(top_albums))) %>%
+    color_branches(k = 8) %>%
+    color_labels(k = 8)
+  
+  # Plot circlize dendrogram
+  circlize_dendrogram(top_dend, labels_track_height = 0.3, dend_track_height = 0.3)
+  
+  return(top_albums)
+}
+```
+
+### Beatles
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+beatles <- spotifyr::get_artist_audio_features('The Beatles')
+beatles <- beatles%>%
+  select_if(is.numeric)%>%
+  bind_cols(beatles%>% select(album_name))%>%
+  mutate(album_name = gsub(" *\\(.*?\\) *| *\\[.*?\\] *", "", album_name)) %>%
+  group_by(album_name)%>%
+  summarise_if(is.numeric, mean, na.rm=TRUE)%>%
+  ungroup() %>%
+  #select(-album_popularity)%>%
+  column_to_rownames("album_name")%>%
+  as.data.frame()
+top_dend <- as.dendrogram(hclust(dist(beatles)))%>%
+  color_branches(k=8)%>%
+  color_labels(k=8)
+
+circlize_dendrogram(top_dend, labels_track_height = 0.3, dend_track_height = .3)
+```
+### Bob Dylan 
+
+```{r BOB DYLAN, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+bob_dylan <- spotifyr::get_artist_audio_features('Bob Dylan')
+bob_dylan <- bob_dylan%>%
+  select_if(is.numeric)%>%
+  bind_cols(bob_dylan%>% select(album_name))%>%
+  mutate(album_name = gsub(" *\\(.*?\\) *| *\\[.*?\\] *", "", album_name)) %>%
+  group_by(album_name)%>%
+  summarise_if(is.numeric, mean, na.rm=TRUE)%>%
+  ungroup() %>%
+  #select(-album_popularity)%>%
+  column_to_rownames("album_name")%>%
+  as.data.frame()
+top_dend <- as.dendrogram(hclust(dist(bob_dylan)))%>%
+  color_branches(k=8)%>%
+  color_labels(k=8)
+
+circlize_dendrogram(top_dend, labels_track_height = 0.3, dend_track_height = .3)
+```
+
+### Elvis Presley 
+```{r ELVIS, echo=FALSE, message=FALSE, warning=FALSE}
+#June 2022 release of Baz Luhrmann's biopic of Elvis Presley
+elvis <- spotifyr::get_artist_audio_features('Elvis Presley')
+elvis <- elvis%>%
+  select_if(is.numeric)%>%
+  bind_cols(elvis%>% select(album_name))%>%
+  mutate(album_name = gsub(" *\\(.*?\\) *| *\\[.*?\\] *", "", album_name)) %>%
+  group_by(album_name)%>%
+  summarise_if(is.numeric, mean, na.rm=TRUE)%>%
+  ungroup() %>%
+  #select(-album_popularity)%>%
+  column_to_rownames("album_name")%>%
+  as.data.frame()
+top_dend <- as.dendrogram(hclust(dist(elvis)))%>%
+  color_branches(k=8)%>%
+  color_labels(k=8)
+
+circlize_dendrogram(top_dend, labels_track_height = 0.3, dend_track_height = .3)
+```
+### The Rolling Stones
+```{r Rolling Stones, echo=FALSE}
+rolling_stones <- spotifyr::get_artist_audio_features('Rolling Stones')
+rolling_stones <- rolling_stones%>%
+  select_if(is.numeric)%>%
+  bind_cols(rolling_stones%>% select(album_name))%>%
+  mutate(album_name = gsub(" *\\(.*?\\) *| *\\[.*?\\] *", "", album_name))%>%
+  group_by(album_name)%>%
+  summarise_if(is.numeric, mean, na.rm=TRUE)%>%
+  ungroup() %>%
+  #select(-album_popularity)%>%
+  column_to_rownames("album_name")%>%
+  as.data.frame()
+top_dend <- as.dendrogram(hclust(dist(rolling_stones)))%>%
+  color_branches(k=8)%>%
+  color_labels(k=8)
+
+circlize_dendrogram(top_dend, labels_track_height = 0.3, dend_track_height = .3)
+```
+
+# 4.Code Apendix 
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE} 
+# this chunk generates the complete code appendix. 
+# eval=FALSE tells R not to run (``evaluate'') the code here (it was already run before).
+
+```
