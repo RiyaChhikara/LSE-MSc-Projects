@@ -2,7 +2,7 @@ Project Details
 --- 
 The repository contains codes, files for the final project of the course MY472. 
 
-About the Project: 
+## About the Project: 
 
 **Research question:** “Rolling Stone Magazine ranked their 100 greatest musical artists of all time. At the end of 2023, how has their music endured? Are there any features or characteristics that seem to explain enduring engagement?”
 
@@ -26,6 +26,27 @@ Using Spotify API, the genres of the artists was assessed, both who were top ran
 
 
 Note: Most graphics are interactive, which helps to read the numbers. 
+
+To run the code, you can follow these steps: 
+
+## Prerequisites
+![spotify Web API ](https://github.com/RiyaChhikara/API-Projects-/assets/115228191/b30df1e1-241e-4ad9-90f1-cce032f1a02b)
+
+Before using this script, you need to have the following:
+1. Spotify Developer Account: You should create a Spotify Developer account to obtain the CLIENT_ID and CLIENT_SECRET. Replace these placeholders with your credentials.
+2. Spotify Redirect URI: Define a redirect URI when creating your Spotify Developer app, and replace REDIRECT_URI with it.
+3. Spotipy Library: Install the Spotipy library, a Python library for the Spotify Web API. You can install it using pip:
+  pip install spotipy
+4. Beautiful Soup Library: Install the Beautiful Soup library for web scraping. You can install it using pip:
+  pip install beautifulsoup4
+
+## Configuration
+You need to set the following variables in the script:
+
+- CLIENT_ID: Replace this with your Spotify Developer App's Client ID.
+- CLIENT_SECRET: Replace this with your Spotify Developer App's Client Secret.
+- REDIRECT_URI: Replace this with the redirect URI associated with your Spotify Developer App.
+- URL: This is the URL of the Billboard Hot 100 chart. Ensure that it is up-to-date and points to the correct location.
 
 Sources: 
 1. [Rolling Stones Ranking of 100 Greatest Artists](https://www.rollingstone.com/music/music-lists/100-greatest-artists-147446/the-rolling-stones-6-30731/)
