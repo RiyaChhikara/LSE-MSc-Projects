@@ -35,10 +35,7 @@ To run the code, you can follow these steps:
 Before using this script, you need to have the following:
 1. Spotify Developer Account: You should create a Spotify Developer account to obtain the CLIENT_ID and CLIENT_SECRET. Replace these placeholders with your credentials.
 2. Spotify Redirect URI: Define a redirect URI when creating your Spotify Developer app, and replace REDIRECT_URI with it.
-3. Spotipy Library: Install the Spotipy library, a Python library for the Spotify Web API. You can install it using pip:
-  pip install spotipy
-4. Beautiful Soup Library: Install the Beautiful Soup library for web scraping. You can install it using pip:
-  pip install beautifulsoup4
+
 
 ## Configuration
 You need to set the following variables in the script:
