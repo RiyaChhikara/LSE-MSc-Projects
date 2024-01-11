@@ -42,8 +42,6 @@ You need to set the following variables in the script:
 
 - CLIENT_ID: Replace this with your Spotify Developer App's Client ID.
 - CLIENT_SECRET: Replace this with your Spotify Developer App's Client Secret.
-- REDIRECT_URI: Replace this with the redirect URI associated with your Spotify Developer App.
-- URL: This is the URL of the Billboard Hot 100 chart. Ensure that it is up-to-date and points to the correct location.
 
 Sources: 
 1. [Rolling Stones Ranking of 100 Greatest Artists](https://www.rollingstone.com/music/music-lists/100-greatest-artists-147446/the-rolling-stones-6-30731/)
