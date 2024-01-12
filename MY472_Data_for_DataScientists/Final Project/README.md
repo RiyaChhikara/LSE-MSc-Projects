@@ -40,8 +40,8 @@ Before using this script, you need to have the following:
 ## Configuration
 You need to set the following variables in the script:
 
-- CLIENT_ID: Replace this with your Spotify Developer App's Client ID.
-- CLIENT_SECRET: Replace this with your Spotify Developer App's Client Secret.
+- SPOTIFY_CLIENT_ID: Replace this with your Spotify Developer App's Client ID.
+- SPOTIFY_CLIENT_SECRET: Replace this with your Spotify Developer App's Client Secret.
 
 Sources: 
 1. [Rolling Stones Ranking of 100 Greatest Artists](https://www.rollingstone.com/music/music-lists/100-greatest-artists-147446/the-rolling-stones-6-30731/)
